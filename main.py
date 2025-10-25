@@ -1,7 +1,7 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 
-app = Flask(__name__)
+app = Flask(_name_)
 
 @app.route('/')
 def home():
@@ -9,16 +9,22 @@ def home():
 
 @app.route('/bot', methods=['POST'])
 def bot():
-    incoming_msg = request.values.get('Body', '').lower()
+    msg = request.values.get('Body', '').lower()
     resp = MessagingResponse()
-    msg = resp.message()
+    reply = resp.message()
 
-    if 'hi' in incoming_msg:
-        msg.body("Hello! 👋 I'm your WhatsApp ordering bot. How can I help you today?")
+    if 'hi' in msg:
+        reply.body("Hello 👋! I'm your WhatsApp ordering bot. How can I help you today?")
+    elif 'price' in msg:
+        reply.body("🛍 Product Prices:\n"
+                   "Sunflower Oil 1L - ₹150\n"
+                   "Sunflower Oil 5L - ₹700\n"
+                   "Groundnut Oil 1L - ₹180\n"
+                   "Groundnut Oil 5L - ₹850")
     else:
-        msg.body("Please say 'hi' to start chatting!")
+        reply.body("Please say 'hi' or 'price' to start chatting!")
 
     return str(resp)
 
-if __name__ == "__main__":
-    app.run()
+if _name_ == '_main_':
+    app.run()
