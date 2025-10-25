@@ -5,7 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 import json
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # Google Sheets setup
 if os.path.exists("credentials.json"):
