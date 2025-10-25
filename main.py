@@ -1,73 +1,88 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import os
-import json
 
 app = Flask(__name__)
 
-# Google Sheets setup
-if os.path.exists("credentials.json"):
-    creds = ServiceAccountCredentials.from_json_keyfile_name(
-        "credentials.json",
-        ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    )
-else:
-    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
-    creds_dict = json.loads(creds_json)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        creds_dict,
-        ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    )
+# --- Product Catalog ---
+PRODUCTS = {
+    "SFO-1L": {"name": "Sunflower Oil 1L", "price": 150},
+    "SFO-5L": {"name": "Sunflower Oil 5L", "price": 700},
+    "GNO-1L": {"name": "Groundnut Oil 1L", "price": 180},
+    "GNO-5L": {"name": "Groundnut Oil 5L", "price": 850}
+}
 
-client = gspread.authorize(creds)
-sheet = client.open("OIL BUSINESS BOT")
-products_sheet = sheet.worksheet("Products")
-orders_sheet = sheet.worksheet("Orders")
 
-@app.route("/message", methods=["POST"])
-def reply_whatsapp():
-    msg = request.form.get("Body", "").strip().lower()
+@app.route('/')
+def home():
+    return "🌐 WhatsApp Bot is running!"
+
+
+@app.route('/bot', methods=['POST'])
+def bot():
+    msg = request.values.get('Body', '').strip().lower()
     resp = MessagingResponse()
     reply = resp.message()
 
-    if msg == "hi":
-        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n\nType:\n- 'price' to see items\n- 'order <item_id> <quantity>' to place order\n- 'menu' to see this menu again.")
+    # --- Greeting ---
+    if msg in ['hi', 'hello', 'hey']:
+        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n\n"
+                   "Type:\n"
+                   "- 'price' to view products\n"
+                   "- 'order <item_id> <quantity>' to place an order\n"
+                   "- 'menu' to see these options again.")
         return str(resp)
 
-    elif msg == "menu":
-        reply.body("📋 Menu:\n- 'price' to view prices\n- 'order <item_id> <quantity>' to place order")
+    # --- Menu ---
+    elif msg == 'menu':
+        reply.body("📋 Menu Options:\n"
+                   "- 'price' → Show available products & prices\n"
+                   "- 'order <item_id> <quantity>' → Place an order\n"
+                   "- Example: order sfo-1l 2")
         return str(resp)
 
-    elif msg == "price":
-        data = products_sheet.get_all_records()
+    # --- Price list ---
+    elif msg == 'price':
         price_list = "🛍 Product Prices:\n"
-        for row in data:
-            price_list += f"{row['item_name']} - ₹{row['price']}\n"
+        for pid, details in PRODUCTS.items():
+            price_list += f"{pid} - {details['name']} - ₹{details['price']}\n"
         reply.body(price_list)
         return str(resp)
 
+    # --- Order placing ---
     elif msg.startswith("order"):
         parts = msg.split()
         if len(parts) != 3:
-            reply.body("⚠ Please use correct format:\norder <item_id> <quantity>")
+            reply.body("⚠ Invalid format!\nPlease use: order <item_id> <quantity>\nExample: order sfo-1l 2")
             return str(resp)
 
         _, item_id, quantity = parts
-        data = products_sheet.get_all_records()
+        item_id = item_id.upper()
 
-        item = next((row for row in data if row["item_id"].lower() == item_id.lower()), None)
-        if not item:
-            reply.body("❌ Invalid item_id. Type 'price' to check available IDs.")
+        if item_id not in PRODUCTS:
+            reply.body("❌ Invalid item ID. Type 'price' to check available product IDs.")
             return str(resp)
 
-        total = int(quantity) * int(item["price"])
-        orders_sheet.append_row([item_id, item["item_name"], quantity, item["price"], total])
+        try:
+            quantity = int(quantity)
+        except ValueError:
+            reply.body("⚠ Quantity should be a number.")
+            return str(resp)
 
-        reply.body(f"✅ Order placed!\n\nItem: {item['item_name']}\nQuantity: {quantity}\nTotal: ₹{total}")
+        item = PRODUCTS[item_id]
+        total = item['price'] * quantity
+
+        reply.body(f"✅ Order placed successfully!\n\n"
+                   f"🧾 Item: {item['name']}\n"
+                   f"📦 Quantity: {quantity}\n"
+                   f"💰 Total: ₹{total}\n\n"
+                   "Thank you for your order! 🙏")
         return str(resp)
 
+    # --- Unknown message ---
     else:
         reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
         return str(resp)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
