@@ -2,26 +2,41 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import os
+import json
 
 app = Flask(__name__)
 
-# Connect Google Sheet
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-client = gspread.authorize(creds)
+# --- Google Sheets Setup ---
+# Option 1: Use credentials.json (if uploaded in repo)
+if os.path.exists("credentials.json"):
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        "credentials.json",
+        ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    )
+else:
+    # Option 2: Use environment variable (safer for Render)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    creds_dict = json.loads(creds_json)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        creds_dict,
+        ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    )
 
+client = gspread.authorize(creds)
 sheet = client.open("OIL BUSINESS BOT")
 products_sheet = sheet.worksheet("Products")
 orders_sheet = sheet.worksheet("Orders")
 
+
 @app.route("/message", methods=["POST"])
 def reply_whatsapp():
-    msg = request.form.get("Body").strip().lower()
+    msg = request.form.get("Body", "").strip().lower()
     resp = MessagingResponse()
     reply = resp.message()
 
     if msg == "hi":
-        reply.body("Hello 👋! I'm your WhatsApp ordering bot. How can I help you today?\n\nType:\n- 'price' to see items\n- 'order <item_id> <quantity>' to place order\n- 'menu' to see this menu again.")
+        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n\nType:\n- 'price' to see items\n- 'order <item_id> <quantity>' to place an order\n- 'menu' to see this menu again.")
         return str(resp)
 
     elif msg == "menu":
@@ -60,5 +75,8 @@ def reply_whatsapp():
         reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
         return str(resp)
 
-if __name__ == "_main_":
-    app.run()
+
+# --- Flask entry point ---
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
