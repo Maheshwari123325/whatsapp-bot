@@ -3,20 +3,37 @@ from twilio.twiml.messaging_response import MessagingResponse
 import csv
 from datetime import datetime
 import os
+import re
 
 app = Flask(__name__)
 
-# Product catalog with codes and prices
+# Product catalog with keywords for flexible matching
 PRODUCTS = {
-    "SFO-1L": {"name": "Sunflower Oil 1L", "price": 150},
-    "SFO-5L": {"name": "Sunflower Oil 5L", "price": 700},
-    "GNO-1L": {"name": "Groundnut Oil 1L", "price": 180},
-    "GNO-5L": {"name": "Groundnut Oil 5L", "price": 850}
+    "SFO-1L": {
+        "name": "Sunflower Oil 1L",
+        "price": 150,
+        "keywords": ["sunflower 1l", "sunflower oil 1 litre", "sunflower oil 1 liter", "sfo-1l"]
+    },
+    "SFO-5L": {
+        "name": "Sunflower Oil 5L",
+        "price": 700,
+        "keywords": ["sunflower 5l", "sunflower oil 5 litre", "sunflower oil 5 liter", "sfo-5l"]
+    },
+    "GNO-1L": {
+        "name": "Groundnut Oil 1L",
+        "price": 180,
+        "keywords": ["groundnut 1l", "groundnut oil 1 litre", "groundnut oil 1 liter", "gno-1l"]
+    },
+    "GNO-5L": {
+        "name": "Groundnut Oil 5L",
+        "price": 850,
+        "keywords": ["groundnut 5l", "groundnut oil 5 litre", "groundnut oil 5 liter", "gno-5l"]
+    }
 }
 
 ORDER_FILE = "orders.csv"
 
-# Create the CSV file with headers if not exist
+# Create CSV file if not exist
 if not os.path.exists(ORDER_FILE):
     with open(ORDER_FILE, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
@@ -28,59 +45,57 @@ def home():
 
 @app.route('/bot', methods=['POST'])
 def bot():
-    msg = request.values.get('Body', '').strip()
+    msg = request.values.get('Body', '').strip().lower()
     sender = request.values.get('From', '')
     resp = MessagingResponse()
     reply = resp.message()
 
-    msg_lower = msg.lower()
-
     # Greeting
-    if msg_lower in ['hi', 'hello']:
+    if msg in ['hi', 'hello']:
         reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n"
                    "You can type:\n"
-                   "👉 'price' to see product prices\n"
                    "👉 'menu' to view product codes\n"
-                   "👉 'order <code> <quantity>' or simply '<code> <quantity>' to place an order")
+                   "👉 'price' to view current prices\n"
+                   "👉 or directly type your order, e.g.:\n"
+                   "   'sunflower oil 1 litre 2 packets'\n"
+                   "   'groundnut oil 5 litres 4 packets'\n"
+                   "   'order SFO-1L 2'")
         return str(resp)
 
-    # Show prices
-    elif 'price' in msg_lower:
-        reply.body("🛍 Product Prices:\n"
-                   "Sunflower Oil 1L - ₹150\n"
-                   "Sunflower Oil 5L - ₹700\n"
-                   "Groundnut Oil 1L - ₹180\n"
-                   "Groundnut Oil 5L - ₹850")
+    # Show price list
+    elif 'price' in msg:
+        price_text = "🛍 Product Prices:\n"
+        for code, details in PRODUCTS.items():
+            price_text += f"{details['name']} - ₹{details['price']}\n"
+        reply.body(price_text)
         return str(resp)
 
     # Show menu
-    elif 'menu' in msg_lower:
+    elif 'menu' in msg:
         menu_text = "📦 Menu Options:\n"
         for code, details in PRODUCTS.items():
             menu_text += f"{code} - {details['name']} (₹{details['price']})\n"
-        menu_text += "\nExample: order SFO-1L 2 or SFO-1L 2"
+        menu_text += "\nExample: 'sunflower oil 1 litre 2 packets' or 'order GNO-5L 3'"
         reply.body(menu_text)
         return str(resp)
 
-    # Order (either "order code qty" or "code qty")
-    elif msg_lower.startswith("order") or any(code.lower() in msg_lower for code in PRODUCTS):
-        parts = msg.replace("order", "").strip().split()
-        if len(parts) < 2:
-            reply.body("⚠ Invalid format.\nUse: order <code> <quantity>\nExample: order SFO-1L 2")
-            return str(resp)
+    # Detect quantity (e.g., 2, 3 packets, etc.)
+    qty_match = re.search(r'(\d+)\s*(packet|packets|nos|no|qty|quantity)?', msg)
+    qty = int(qty_match.group(1)) if qty_match else 1  # Default to 1 if not found
 
-        code = parts[0].upper()
-        try:
-            qty = int(parts[1])
-        except ValueError:
-            reply.body("⚠ Quantity must be a number.\nExample: order SFO-1L 2")
-            return str(resp)
+    # Identify product
+    selected_product = None
+    for code, info in PRODUCTS.items():
+        for kw in info['keywords']:
+            if kw in msg:
+                selected_product = code
+                break
+        if selected_product:
+            break
 
-        if code not in PRODUCTS:
-            reply.body("❌ Invalid product code. Type 'menu' to see available products.")
-            return str(resp)
-
-        product = PRODUCTS[code]
+    # Handle order
+    if selected_product:
+        product = PRODUCTS[selected_product]
         total = product["price"] * qty
 
         # Save order
@@ -95,18 +110,20 @@ def bot():
             ])
 
         reply.body(f"✅ Order confirmed!\n"
-                   f"Product: {product['name']}\n"
-                   f"Quantity: {qty}\n"
-                   f"Total Amount: ₹{total}\n\n"
+                   f"🛒 {product['name']}\n"
+                   f"Qty: {qty}\n"
+                   f"💰 Total: ₹{total}\n\n"
                    f"Thank you for your order! 🙏")
         return str(resp)
 
-    # Fallback for unknown messages
-    else:
-        reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
-        return str(resp)
+    # If message not recognized
+    reply.body("🤖 Sorry, I didn’t understand that.\n"
+               "Try messages like:\n"
+               "👉 Sunflower oil 1 litre 2 packets\n"
+               "👉 Groundnut oil 5 litre 4 packets\n"
+               "👉 order GNO-1L 3")
+    return str(resp)
 
 
-if __name__ == "_main_":
+if __name__ == "__main__":
     app.run(host="0.0.0.0",port=5000)
-
