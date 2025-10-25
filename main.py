@@ -4,9 +4,9 @@ import csv
 from datetime import datetime
 import os
 
-app = Flask(__name__)
+app = Flask(_name_)
 
-# Product catalog
+# Product catalog with codes and prices
 PRODUCTS = {
     "SFO-1L": {"name": "Sunflower Oil 1L", "price": 150},
     "SFO-5L": {"name": "Sunflower Oil 5L", "price": 700},
@@ -16,7 +16,7 @@ PRODUCTS = {
 
 ORDER_FILE = "orders.csv"
 
-# Create the CSV file if not exists
+# Create the CSV file with headers if not exist
 if not os.path.exists(ORDER_FILE):
     with open(ORDER_FILE, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
@@ -29,7 +29,7 @@ def home():
 @app.route('/bot', methods=['POST'])
 def bot():
     msg = request.values.get('Body', '').strip()
-    sender = request.values.get('From', '').replace("whatsapp:", "")
+    sender = request.values.get('From', '')
     resp = MessagingResponse()
     reply = resp.message()
 
@@ -37,24 +37,23 @@ def bot():
 
     # Greeting
     if msg_lower in ['hi', 'hello']:
-        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n\n"
+        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n"
                    "You can type:\n"
-                   "🛍 'price' → View product prices\n"
-                   "📦 'menu' → View product codes\n"
-                   "🛒 'order <code> <quantity>' or '<code> <quantity>' → Place an order\n"
-                   "📋 'my orders' → View your past orders")
+                   "👉 'price' to see product prices\n"
+                   "👉 'menu' to view product codes\n"
+                   "👉 'order <code> <quantity>' or simply '<code> <quantity>' to place an order")
         return str(resp)
 
-    # Price list
+    # Show prices
     elif 'price' in msg_lower:
         reply.body("🛍 Product Prices:\n"
-                   "SFO-1L - ₹150\n"
-                   "SFO-5L - ₹700\n"
-                   "GNO-1L - ₹180\n"
-                   "GNO-5L - ₹850")
+                   "Sunflower Oil 1L - ₹150\n"
+                   "Sunflower Oil 5L - ₹700\n"
+                   "Groundnut Oil 1L - ₹180\n"
+                   "Groundnut Oil 5L - ₹850")
         return str(resp)
 
-    # Menu with codes
+    # Show menu
     elif 'menu' in msg_lower:
         menu_text = "📦 Menu Options:\n"
         for code, details in PRODUCTS.items():
@@ -63,30 +62,7 @@ def bot():
         reply.body(menu_text)
         return str(resp)
 
-    # View order history
-    elif 'my orders' in msg_lower:
-        if not os.path.exists(ORDER_FILE):
-            reply.body("📝 You have no orders yet.")
-            return str(resp)
-
-        with open(ORDER_FILE, mode="r", encoding="utf-8") as file:
-            reader = csv.DictReader(file)
-            orders = [row for row in reader if row["Customer_Number"] == sender]
-
-        if not orders:
-            reply.body("📝 You have no previous orders.")
-            return str(resp)
-
-        summary = "🧾 Your Order History:\n"
-        for o in orders[-5:]:  # show last 5 orders
-            summary += (f"📅 {o['Date']}\n"
-                        f"🛒 {o['Product']}\n"
-                        f"Qty: {o['Quantity']} | ₹{o['Total_Amount']}\n\n")
-
-        reply.body(summary)
-        return str(resp)
-
-    # Order command (supports "order SFO-1L 2" or "SFO-1L 2")
+    # Order (either "order code qty" or "code qty")
     elif msg_lower.startswith("order") or any(code.lower() in msg_lower for code in PRODUCTS):
         parts = msg.replace("order", "").strip().split()
         if len(parts) < 2:
@@ -107,7 +83,7 @@ def bot():
         product = PRODUCTS[code]
         total = product["price"] * qty
 
-        # Save order in CSV
+        # Save order
         with open(ORDER_FILE, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
             writer.writerow([
@@ -119,18 +95,18 @@ def bot():
             ])
 
         reply.body(f"✅ Order confirmed!\n"
-                   f"🛒 {product['name']}\n"
-                   f"Qty: {qty}\n"
-                   f"💰 Total: ₹{total}\n\n"
+                   f"Product: {product['name']}\n"
+                   f"Quantity: {qty}\n"
+                   f"Total Amount: ₹{total}\n\n"
                    f"Thank you for your order! 🙏")
         return str(resp)
 
-    # Fallback
+    # Fallback for unknown messages
     else:
-        reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' or 'hi' for help.")
+        reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
         return str(resp)
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0",port=port)
+if _name_ == "_main_":
+    app.run(host="0.0.0.0",port=5000)
+MAIN.PY
