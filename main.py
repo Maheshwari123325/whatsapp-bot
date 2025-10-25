@@ -1,9 +1,12 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
+import csv
+from datetime import datetime
+import os
 
 app = Flask(__name__)
 
-# --- Product Catalog ---
+# Product catalog with codes and prices
 PRODUCTS = {
     "SFO-1L": {"name": "Sunflower Oil 1L", "price": 150},
     "SFO-5L": {"name": "Sunflower Oil 5L", "price": 700},
@@ -11,74 +14,94 @@ PRODUCTS = {
     "GNO-5L": {"name": "Groundnut Oil 5L", "price": 850}
 }
 
+ORDER_FILE = "orders.csv"
+
+# Create the CSV file with headers if not exist
+if not os.path.exists(ORDER_FILE):
+    with open(ORDER_FILE, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Date", "Customer_Number", "Product", "Quantity", "Total_Amount"])
 
 @app.route('/')
 def home():
-    return "🌐 WhatsApp Bot is running!"
-
+    return "WhatsApp Bot is running!"
 
 @app.route('/bot', methods=['POST'])
 def bot():
-    msg = request.values.get('Body', '').strip().lower()
+    msg = request.values.get('Body', '').strip()
+    sender = request.values.get('From', '')
     resp = MessagingResponse()
     reply = resp.message()
 
-    # --- Greeting ---
-    if msg in ['hi', 'hello', 'hey']:
-        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n\n"
-                   "Type:\n"
-                   "- 'price' to view products\n"
-                   "- 'order <item_id> <quantity>' to place an order\n"
-                   "- 'menu' to see these options again.")
+    msg_lower = msg.lower()
+
+    # Greeting
+    if msg_lower in ['hi', 'hello']:
+        reply.body("Hello 👋! I'm your WhatsApp ordering bot.\n"
+                   "You can type:\n"
+                   "👉 'price' to see product prices\n"
+                   "👉 'menu' to view product codes\n"
+                   "👉 'order <code> <quantity>' or simply '<code> <quantity>' to place an order")
         return str(resp)
 
-    # --- Menu ---
-    elif msg == 'menu':
-        reply.body("📋 Menu Options:\n"
-                   "- 'price' → Show available products & prices\n"
-                   "- 'order <item_id> <quantity>' → Place an order\n"
-                   "- Example: order sfo-1l 2")
+    # Show prices
+    elif 'price' in msg_lower:
+        reply.body("🛍 Product Prices:\n"
+                   "Sunflower Oil 1L - ₹150\n"
+                   "Sunflower Oil 5L - ₹700\n"
+                   "Groundnut Oil 1L - ₹180\n"
+                   "Groundnut Oil 5L - ₹850")
         return str(resp)
 
-    # --- Price list ---
-    elif msg == 'price':
-        price_list = "🛍 Product Prices:\n"
-        for pid, details in PRODUCTS.items():
-            price_list += f"{pid} - {details['name']} - ₹{details['price']}\n"
-        reply.body(price_list)
+    # Show menu
+    elif 'menu' in msg_lower:
+        menu_text = "📦 Menu Options:\n"
+        for code, details in PRODUCTS.items():
+            menu_text += f"{code} - {details['name']} (₹{details['price']})\n"
+        menu_text += "\nExample: order SFO-1L 2 or SFO-1L 2"
+        reply.body(menu_text)
         return str(resp)
 
-    # --- Order placing ---
-    elif msg.startswith("order"):
-        parts = msg.split()
-        if len(parts) != 3:
-            reply.body("⚠ Invalid format!\nPlease use: order <item_id> <quantity>\nExample: order sfo-1l 2")
+    # Order (either "order code qty" or "code qty")
+    elif msg_lower.startswith("order") or any(code.lower() in msg_lower for code in PRODUCTS):
+        parts = msg.replace("order", "").strip().split()
+        if len(parts) < 2:
+            reply.body("⚠ Invalid format.\nUse: order <code> <quantity>\nExample: order SFO-1L 2")
             return str(resp)
 
-        _, item_id, quantity = parts
-        item_id = item_id.upper()
-
-        if item_id not in PRODUCTS:
-            reply.body("❌ Invalid item ID. Type 'price' to check available product IDs.")
-            return str(resp)
-
+        code = parts[0].upper()
         try:
-            quantity = int(quantity)
+            qty = int(parts[1])
         except ValueError:
-            reply.body("⚠ Quantity should be a number.")
+            reply.body("⚠ Quantity must be a number.\nExample: order SFO-1L 2")
             return str(resp)
 
-        item = PRODUCTS[item_id]
-        total = item['price'] * quantity
+        if code not in PRODUCTS:
+            reply.body("❌ Invalid product code. Type 'menu' to see available products.")
+            return str(resp)
 
-        reply.body(f"✅ Order placed successfully!\n\n"
-                   f"🧾 Item: {item['name']}\n"
-                   f"📦 Quantity: {quantity}\n"
-                   f"💰 Total: ₹{total}\n\n"
-                   "Thank you for your order! 🙏")
+        product = PRODUCTS[code]
+        total = product["price"] * qty
+
+        # Save order
+        with open(ORDER_FILE, mode="a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                sender,
+                product['name'],
+                qty,
+                total
+            ])
+
+        reply.body(f"✅ Order confirmed!\n"
+                   f"Product: {product['name']}\n"
+                   f"Quantity: {qty}\n"
+                   f"Total Amount: ₹{total}\n\n"
+                   f"Thank you for your order! 🙏")
         return str(resp)
 
-    # --- Unknown message ---
+    # Fallback for unknown messages
     else:
         reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
         return str(resp)
