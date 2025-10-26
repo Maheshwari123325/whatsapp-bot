@@ -3,6 +3,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 import csv
 from datetime import datetime
 import os
+import re
 
 app = Flask(__name__)
 
@@ -32,7 +33,6 @@ def bot():
     sender = request.values.get('From', '')
     resp = MessagingResponse()
     reply = resp.message()
-
     msg_lower = msg.lower()
 
     # Greeting
@@ -41,7 +41,7 @@ def bot():
                    "You can type:\n"
                    "👉 'price' to see product prices\n"
                    "👉 'menu' to view product codes\n"
-                   "👉 'order <code> <quantity>' or simply '<code> <quantity>' to place an order")
+                   "👉 'order <items>' to place an order (e.g., 'order SFO-1L 2, GNO-1L 4')")
         return str(resp)
 
     # Show prices
@@ -58,49 +58,77 @@ def bot():
         menu_text = "📦 Menu Options:\n"
         for code, details in PRODUCTS.items():
             menu_text += f"{code} - {details['name']} (₹{details['price']})\n"
-        menu_text += "\nExample: order SFO-1L 2 or SFO-1L 2"
+        menu_text += "\nExample: order SFO-1L 2, GNO-1L 4, SFO-5L 3"
         reply.body(menu_text)
         return str(resp)
 
-    # Order (either "order code qty" or "code qty")
+    # Order handling
     elif msg_lower.startswith("order") or any(code.lower() in msg_lower for code in PRODUCTS):
-        parts = msg.replace("order", "").strip().split()
-        if len(parts) < 2:
-            reply.body("⚠ Invalid format.\nUse: order <code> <quantity>\nExample: order SFO-1L 2")
+        msg_clean = msg_lower.replace("order", "").strip()
+
+        # Split possible items by comma or 'and'
+        parts = re.split(r',| and ', msg_clean)
+
+        orders = []
+        total_bill = 0
+        invalid_items = []
+
+        for part in parts:
+            tokens = part.strip().split()
+            if len(tokens) < 2:
+                continue
+
+            # Try to find a valid product code in the message
+            found_code = None
+            for code, details in PRODUCTS.items():
+                if code.lower() in part or details['name'].split()[0].lower() in part:
+                    found_code = code
+                    break
+
+            if not found_code:
+                invalid_items.append(part)
+                continue
+
+            # Try to extract quantity
+            qty_match = re.search(r'\d+', part)
+            if not qty_match:
+                invalid_items.append(part)
+                continue
+
+            qty = int(qty_match.group())
+            product = PRODUCTS[found_code]
+            total = product["price"] * qty
+            total_bill += total
+
+            orders.append((product["name"], qty, total))
+
+            # Save each item into CSV
+            with open(ORDER_FILE, mode="a", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    sender,
+                    product['name'],
+                    qty,
+                    total
+                ])
+
+        if not orders:
+            reply.body("⚠ Could not understand your order.\nUse: order SFO-1L 2, GNO-1L 4, SFO-5L 3")
             return str(resp)
 
-        code = parts[0].upper()
-        try:
-            qty = int(parts[1])
-        except ValueError:
-            reply.body("⚠ Quantity must be a number.\nExample: order SFO-1L 2")
-            return str(resp)
+        # Build confirmation message
+        confirm_msg = "✅ Order confirmed!\n"
+        for p, q, t in orders:
+            confirm_msg += f"{p} x{q} = ₹{t}\n"
+        confirm_msg += f"\n🧾 Total Bill: ₹{total_bill}\nThank you for your order! 🙏"
 
-        if code not in PRODUCTS:
-            reply.body("❌ Invalid product code. Type 'menu' to see available products.")
-            return str(resp)
+        # Include any invalid items
+        if invalid_items:
+            confirm_msg += "\n\n⚠ Could not recognize: " + ", ".join(invalid_items)
 
-        product = PRODUCTS[code]
-        total = product["price"] * qty
-
-        # Save order
-        with open(ORDER_FILE, mode="a", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow([
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                sender,
-                product['name'],
-                qty,
-                total
-            ])
-
-        reply.body(f"✅ Order confirmed!\n"
-                   f"Product: {product['name']}\n"
-                   f"Quantity: {qty}\n"
-                   f"Total Amount: ₹{total}\n\n"
-                   f"Thank you for your order! 🙏")
+        reply.body(confirm_msg)
         return str(resp)
-
     # Fallback for unknown messages
     else:
         reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
