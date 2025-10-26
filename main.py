@@ -4,7 +4,7 @@ import csv
 from datetime import datetime
 import os
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # Product catalog with codes and prices
 PRODUCTS = {
@@ -105,5 +105,5 @@ def bot():
     else:
         reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
         return str(resp)
-if__name__ =="__main__":
+if __name__ == "__main__":
     app.run(host="0.0.0.0",port=5000)
