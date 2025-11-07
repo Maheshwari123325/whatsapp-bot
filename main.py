@@ -1,6 +1,6 @@
 from flask import Flask, request
 from twilio.rest import Client as TwilioClient
-from openai import OpenAI
+import openai
 import os
 from dotenv import load_dotenv
 
@@ -16,7 +16,7 @@ twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
 twilio_from = os.getenv("TWILIO_FROM")
 
 # Initialize clients
-openai_client = OpenAI(api_key=openai_key)
+openai.api_key = openai_key
 twilio_client = TwilioClient(twilio_sid, twilio_token)
 
 @app.route("/bot", methods=["POST"])
@@ -28,14 +28,14 @@ def bot():
         return "No message received", 400
 
     # Generate AI response
-    ai_response = openai_client.chat.completions.create(
+    ai_response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful WhatsApp assistant."},
             {"role": "user", "content": incoming_msg}
         ]
     )
-    reply_text = ai_response.choices[0].message.content.strip()
+    reply_text = ai_response.choices[0].message["content"].strip()
 
     # Send WhatsApp message via Twilio
     twilio_client.messages.create(
