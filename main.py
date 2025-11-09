@@ -89,12 +89,13 @@ def bot():
         }}
         """
 
-        ai_response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": ai_prompt}]
+        # ✅ Updated syntax for OpenAI v1.x
+        ai_response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=ai_prompt
         )
 
-        ai_text = ai_response.choices[0].message.content.strip()
+        ai_text = ai_response.output[0].content[0].text.strip()
 
         # --- Extract product orders from AI response ---
         orders = []
@@ -129,8 +130,7 @@ def bot():
             confirm_msg += f"\n🧾 Total Bill: ₹{total_bill}\nThank you for your order! 🙏"
             reply.body(confirm_msg)
         else:
-            # If AI couldn’t extract valid order
-            reply.body("🤖 I couldn’t identify your order. Please specify product and quantity clearly.\nExample: 'Order SFO-1L 2, GNO-5L 1'.")
+            reply.body("🤖 I couldn’t identify your order. Please specify product and quantity clearly.\nExample: 'Order SFO-1L 2, GNO-1L 1'.")
 
     except Exception as e:
         reply.body(f"⚠ AI bot error: {str(e)}")
@@ -138,5 +138,5 @@ def bot():
     return str(resp)
 
 
-if __name__=="__main__":
-    app.run(host="0.0.0.0",port=int(os.environ.get("PORT",5000)))
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)))
