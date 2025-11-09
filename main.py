@@ -10,7 +10,7 @@ import re
 app = Flask(__name__)
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI()
 
 # Product catalog with codes and prices
 PRODUCTS = {
