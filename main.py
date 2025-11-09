@@ -1,5 +1,6 @@
-import openai
-print("OpenAI SDK version in Render:", openai.__version__)
+import openai,sys
+sys.stdout.flush()
+print("OpenAI SDK version in Render:", openai.__version__,flush=True)
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from openai import OpenAI
