@@ -1,20 +1,11 @@
-import openai,sys
-sys.stdout.flush()
-print("OpenAI SDK version in Render:", openai.__version__,flush=True)
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-from openai import OpenAI
 import csv
 from datetime import datetime
 import os
 import re
 
-# Initialize Flask
 app = Flask(__name__)
-
-# Initialize OpenAI client
-client =# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  
 
 # Product catalog with codes and prices
 PRODUCTS = {
@@ -26,7 +17,7 @@ PRODUCTS = {
 
 ORDER_FILE = "orders.csv"
 
-# Create CSV file if not exists
+# Create CSV file with headers if not exists
 if not os.path.exists(ORDER_FILE):
     with open(ORDER_FILE, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
@@ -35,7 +26,7 @@ if not os.path.exists(ORDER_FILE):
 
 @app.route('/')
 def home():
-    return "✅ OilWhatsAppBot (AI Version) is running!"
+    return "✅ WhatsApp Bot is running!"
 
 
 @app.route('/bot', methods=['POST'])
@@ -44,103 +35,113 @@ def bot():
     sender = request.values.get('From', '')
     resp = MessagingResponse()
     reply = resp.message()
-
     msg_lower = msg.lower()
 
-    # --- RULE-BASED QUICK COMMANDS ---
+    # 👋 Greeting
     if msg_lower in ['hi', 'hello']:
         reply.body(
-            "Hello 👋! I'm OilWhatsAppBot (AI), your smart ordering assistant.\n\n"
+            "Hello 👋! I'm your WhatsApp ordering bot.\n\n"
             "You can type:\n"
             "👉 'price' — to see product prices\n"
             "👉 'menu' — to view product codes\n"
-            "👉 'order <items>' — to place an order\n"
-            "👉 Or just talk naturally, like:\n"
-            "‘I want 5L sunflower oil and 1L groundnut oil.’"
+            "👉 'order <items>' — to place an order\n\n"
+            "Example:\n"
+            "order sunflower oil 1 liter 2 packets, groundnut oil 5 liter 3 packets"
         )
         return str(resp)
 
+    # 💰 Show prices
     elif 'price' in msg_lower:
-        prices = "\n".join([f"{v['name']} - ₹{v['price']}" for v in PRODUCTS.values()])
-        reply.body(f"🛍 Product Prices:\n{prices}")
+        reply.body(
+            "🛍 Product Prices:\n"
+            "Sunflower Oil 1L - ₹150\n"
+            "Sunflower Oil 5L - ₹700\n"
+            "Groundnut Oil 1L - ₹180\n"
+            "Groundnut Oil 5L - ₹850"
+        )
         return str(resp)
 
+    # 📦 Show menu
     elif 'menu' in msg_lower:
         menu_text = "📦 Menu Options:\n"
         for code, details in PRODUCTS.items():
             menu_text += f"{code} - {details['name']} (₹{details['price']})\n"
-        menu_text += "\nExample:\norder SFO-1L 2, GNO-1L 4"
+        menu_text += "\nExample:\norder SFO-1L 2, GNO-1L 4, SFO-5L 3"
         reply.body(menu_text)
         return str(resp)
 
-    # --- AI ORDER HANDLING ---
-    try:
-        ai_prompt = f"""
-        You are an intelligent WhatsApp ordering assistant for an oil business.
-        Understand the user's message and identify product names, quantities, and sizes.
-        The available products are:
-        {PRODUCTS}
+    # 🛒 Order handling
+    elif msg_lower.startswith("order") or any(code.lower() in msg_lower for code in PRODUCTS):
+        msg_clean = msg_lower.replace("order", "").strip()
+        parts = re.split(r',| and ', msg_clean)
 
-        Message: "{msg}"
-
-        Respond in this structured JSON format:
-        {{
-            "orders": [
-                {{"product_code": "SFO-1L", "quantity": 2}},
-                {{"product_code": "GNO-5L", "quantity": 1}}
-            ],
-            "clarification": "if needed"
-        }}
-        """
-
-        # ✅ Updated syntax for OpenAI v1.x
-        ai_response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=ai_prompt
-        )
-
-        ai_text = ai_response.output[0].content[0].text.strip()
-
-        # --- Extract product orders from AI response ---
         orders = []
         total_bill = 0
+        invalid_items = []
 
-        # Try to parse AI JSON-like text
-        matches = re.findall(r'"product_code":\s*"(\w+-\w+)"\s*,\s*"quantity":\s*(\d+)', ai_text)
-        for code, qty in matches:
-            qty = int(qty)
-            if code in PRODUCTS:
-                product = PRODUCTS[code]
-                total = product["price"] * qty
-                total_bill += total
-                orders.append((product["name"], qty, total))
+        for part in parts:
+            part = part.strip()
 
-                # Save to CSV
-                with open(ORDER_FILE, mode="a", newline="", encoding="utf-8") as file:
-                    writer = csv.writer(file)
-                    writer.writerow([
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        sender,
-                        product['name'],
-                        qty,
-                        total
-                    ])
+            # Try to identify the product
+            found_code = None
+            for code, details in PRODUCTS.items():
+                pattern = re.compile(
+                    rf"{details['name'].split()[0].lower()}.*(1l|5l|1|5|liter|litre|liters|litres)",
+                    re.IGNORECASE
+                )
+                if code.lower() in part or pattern.search(part):
+                    found_code = code
+                    break
 
-        # --- AI-Driven Natural Reply ---
-        if orders:
-            confirm_msg = "✅ Order confirmed!\n"
-            for p, q, t in orders:
-                confirm_msg += f"{p} x{q} = ₹{t}\n"
-            confirm_msg += f"\n🧾 Total Bill: ₹{total_bill}\nThank you for your order! 🙏"
-            reply.body(confirm_msg)
-        else:
-            reply.body("🤖 I couldn’t identify your order. Please specify product and quantity clearly.\nExample: 'Order SFO-1L 2, GNO-1L 1'.")
+            if not found_code:
+                invalid_items.append(part)
+                continue
 
-    except Exception as e:
-        reply.body(f"⚠ AI bot error: {str(e)}")
+            # Extract quantity
+            qty_match = re.findall(r'\d+', part)
+            if not qty_match:
+                invalid_items.append(part)
+                continue
 
-    return str(resp)
+            qty = int(qty_match[-1])  # Last number is treated as quantity
+            product = PRODUCTS[found_code]
+            total = product["price"] * qty
+            total_bill += total
+
+            orders.append((product["name"], qty, total))
+
+            # Save to CSV
+            with open(ORDER_FILE, mode="a", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    sender,
+                    product['name'],
+                    qty,
+                    total
+                ])
+
+        if not orders:
+            reply.body("⚠ Could not understand your order.\nExample:\norder sunflower oil 1 liter 2 packets, groundnut oil 5 liter 3 packets")
+            return str(resp)
+
+        # Build confirmation message
+        confirm_msg = "✅ Order confirmed!\n"
+        for p, q, t in orders:
+            confirm_msg += f"{p} x{q} = ₹{t}\n"
+        confirm_msg += f"\n🧾 Total Bill: ₹{total_bill}\nThank you for your order! 🙏"
+
+        if invalid_items:
+            confirm_msg += "\n\n⚠ Could not recognize: " + ", ".join(invalid_items)
+
+        reply.body(confirm_msg)
+        return str(resp)
+
+    # 🤖 Unknown message
+    else:
+        reply.body("🤖 Sorry, I didn’t understand that.\nType 'menu' for help.")
+        return str(resp)
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)))
+    app.run(host="0.0.0.0",port=5000)
