@@ -35,7 +35,7 @@ def whatsapp_reply():
             to=from_number
         )
 
-        return "OK", 200
+        return "OK",200
     except Exception as e:
         print(f"Error: {e}")
         return "Error",500
@@ -55,7 +55,7 @@ def get_ai_reply(user_input):
         ]
     }
 
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers,json=data)
     result = response.json()
 
     # Extract AI text
