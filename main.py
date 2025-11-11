@@ -1,11 +1,17 @@
+import os
+import requests
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
 def get_ai_reply(user_input):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "X-Title": "WhatsApp Ordering Bot"
     }
     data = {
-        "model": "meta-llama/Llama-3-8b-chat",
+        "model": "meta-llama/llama-3-8b-chat",
         "messages": [
             {"role": "system", "content": "You are an AI ordering assistant."},
             {"role": "user", "content": user_input}
@@ -28,6 +34,7 @@ def get_ai_reply(user_input):
         ai_reply = choices[0].get("message", {}).get("content")
         if not ai_reply:
             return f"⚠ AI returned no text. Raw: {result}"
+
         return ai_reply.strip()
 
     except Exception as e:
