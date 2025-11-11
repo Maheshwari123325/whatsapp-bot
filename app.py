@@ -7,7 +7,7 @@ import json
 app = Flask(__name__)
 
 # ------------------------------
-#  AI REPLY FUNCTION
+#  AI REPLY FUNCTION (Oil Bot)
 # ------------------------------
 def get_ai_reply(user_input):
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -17,13 +17,18 @@ def get_ai_reply(user_input):
     }
 
     data = {
-        "model": "meta-llama/llama-4-maverick:free",
+        "model": "meta-llama/llama-4-maverick:free",  # ✅ Valid free model
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    "You are an AI ordering assistant. "
-                    "Help users browse products, check prices, and place polite orders."
+                    "You are OilBusinessBot, an AI ordering assistant for an edible oil business. "
+                    "Your goal is to help customers browse oil types, check prices, and place polite orders. "
+                    "Keep your responses short, friendly, and professional. "
+                    "Do not mention food, restaurants, or dishes. "
+                    "Available products are: Sunflower Oil, Groundnut Oil, Palm Oil, and Coconut Oil. "
+                    "Each product is sold in 1L, 5L, and 15L packs. "
+                    "Use ₹ symbol for prices."
                 ),
             },
             {"role": "user", "content": user_input},
@@ -40,7 +45,6 @@ def get_ai_reply(user_input):
         except json.JSONDecodeError:
             return "⚠ AI server returned unreadable response."
 
-        # Handle normal OpenRouter JSON formats
         if "choices" in result and len(result["choices"]) > 0:
             choice = result["choices"][0]
             if "message" in choice and "content" in choice["message"]:
@@ -48,12 +52,10 @@ def get_ai_reply(user_input):
             elif "text" in choice:
                 return choice["text"].strip()
 
-        # Handle API errors
         if "error" in result:
             msg = result["error"].get("message", "Unknown AI error")
             return f"⚠ AI error: {msg}"
 
-        # Otherwise, print raw for debugging
         return f"⚠ Unexpected response format: {result}"
 
     except Exception as e:
@@ -61,11 +63,11 @@ def get_ai_reply(user_input):
         return "⚠ Error connecting to AI server."
 
 # ------------------------------
-#  HOME ROUTE (for Render test)
+#  HOME ROUTE
 # ------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return "✅ WhatsApp AI Ordering Bot is live!"
+    return "✅ OilBusinessBot is live!"
 
 # ------------------------------
 #  TWILIO WEBHOOK
