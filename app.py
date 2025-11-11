@@ -17,7 +17,7 @@ def get_ai_reply(user_input):
     }
 
     data = {
-        "model": "meta-llama/Llama-3-8b-chat",
+        "model": "meta-llama/llama-3-8b-chat",
         "messages": [
             {
                 "role": "system",
