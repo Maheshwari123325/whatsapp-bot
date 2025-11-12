@@ -12,7 +12,7 @@ SCOPE = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1RFdApVA3T-u4rb50DUWycFS0uO-b5ARWVI51IaT7Mh8/edit?gid=0#gid=0"
 
 # Load credentials from JSON file
-creds = Credentials.from_service_account_file("credential.json",scopes=SCOPE)
+creds = Credentials.from_service_account_file("credential.json.json",scopes=SCOPE)
 client = gspread.authorize(creds)
 sheet = client.open_by_url(SHEET_URL).worksheet("Products")
 
