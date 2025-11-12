@@ -1,5 +1,6 @@
-flask==3.0.3
-twilio==9.2.3
-gunicorn==23.0.0
+flask
+twilio
 python-dotenv
 requests
+gspread
+oauth2client
