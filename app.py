@@ -9,7 +9,7 @@ app = Flask(__name__)
 # GOOGLE SHEETS SETUP
 # ------------------------------
 SCOPE = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-SHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1RFdApVA3T-u4rb50DUWycFS0uO-b5ARWVI51IaT7Mh8/edit?gid=0#gid=0"
 
 # Load credentials from JSON file
 creds = Credentials.from_service_account_file("oilbot-service.json", scopes=SCOPE)
