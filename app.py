@@ -8,47 +8,63 @@ from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
-# ---------------------------------
-# GOOGLE SHEETS SETUP
-# ---------------------------------
-SCOPE = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-SHEET_URL = os.getenv("SHEET_URL")
+# ------------------------------
+#  GOOGLE SHEETS CONNECTION
+# ------------------------------
+def connect_to_gsheet():
+    """Connect to Google Sheets using service account credentials from environment variable."""
+    try:
+        creds_env = os.getenv("GOOGLE_CREDENTIALS")
+        if not creds_env:
+            print("⚠ GOOGLE_CREDENTIALS variable not found!")
+            return None
 
-try:
-    print("🔍 Trying to connect to Google Sheet...")
-    creds = Credentials.from_service_account_file("credential.json", scopes=SCOPE)
-    print("✅ Loaded credential file successfully.")
-    client = gspread.authorize(creds)
-    print("✅ Authorized Google client successfully.")
-    sheet = client.open_by_url(SHEET_URL).worksheet("Products")
-    print("✅ Connected to 'Products' worksheet successfully.")
-except Exception as e:
-    print("❌ Google Sheet connection error:", str(e))
-    sheet = None
+        print("🔹 Parsing GOOGLE_CREDENTIALS...")
+        creds_json = json.loads(creds_env)
+
+        print("🔹 Authorizing Google client...")
+        creds = Credentials.from_service_account_info(creds_json)
+        client = gspread.authorize(creds)
+
+        print("🔹 Opening Google Sheet...")
+        # ✅ Change sheet and tab names if needed
+        sheet = client.open("OIL BUSINESS BOT").worksheet("Products")
+
+        print("✅ Google Sheet connected successfully.")
+        return sheet
+
+    except Exception as e:
+        print("❌ Google Sheet connection error:", str(e))
+        return None
 
 
-# ---------------------------------
-# FUNCTION TO FETCH PRICE FROM SHEET
-# ---------------------------------
-def get_product_price(product_name):
+# ------------------------------
+#  FETCH PRODUCT DATA
+# ------------------------------
+def get_product_data():
+    """Retrieve product records from Google Sheet."""
+    sheet = connect_to_gsheet()
     if not sheet:
-        return "⚠ Could not load product list from Google Sheet."
+        print("⚠ Could not connect to Google Sheet.")
+        return None
 
     try:
+        print("🔹 Fetching all records from sheet...")
         records = sheet.get_all_records()
-        for row in records:
-            if row["Product"].lower() == product_name.lower():
-                return f"The price of {product_name} is ₹{row['Price']} per litre."
-        return "Sorry, I couldn’t find that product in the price list."
+        print(f"✅ Retrieved {len(records)} records from sheet.")
+        if len(records) == 0:
+            print("⚠ No records found — check header row in sheet.")
+        return records
     except Exception as e:
-        print("⚠ Error reading from Google Sheet:", e)
-        return "⚠ Could not fetch product prices at the moment."
+        print("❌ Error reading sheet:", str(e))
+        return None
 
 
-# ---------------------------------
-# AI REPLY FUNCTION
-# ---------------------------------
+# ------------------------------
+#  AI REPLY FUNCTION
+# ------------------------------
 def get_ai_reply(user_input):
+    """Send user input to OpenRouter AI and return reply text."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
@@ -61,9 +77,9 @@ def get_ai_reply(user_input):
             {
                 "role": "system",
                 "content": (
-                    "You are an AI assistant for an oil business. "
-                    "Help customers check oil prices, product details, and place polite orders. "
-                    "If a user asks for a product price, reply by saying you will check the Google Sheet."
+                    "You are an AI ordering assistant for an oil business. "
+                    "If a user asks about prices or products, guide them politely. "
+                    "Otherwise, answer naturally."
                 ),
             },
             {"role": "user", "content": user_input},
@@ -72,66 +88,77 @@ def get_ai_reply(user_input):
 
     try:
         response = requests.post(url, headers=headers, json=data, timeout=25)
-        print("🔹 Status Code:", response.status_code)
-        print("🔹 Raw Response (first 800 chars):", response.text[:800])
-
-        try:
-            result = response.json()
-        except json.JSONDecodeError:
-            return "⚠ AI server returned unreadable response."
+        result = response.json()
+        print("🔹 AI Raw Response:", str(result)[:200])
 
         if "choices" in result and len(result["choices"]) > 0:
-            choice = result["choices"][0]
-            if "message" in choice and "content" in choice["message"]:
-                return choice["message"]["content"].strip()
-            elif "text" in choice:
-                return choice["text"].strip()
-
-        if "error" in result:
-            msg = result["error"].get("message", "Unknown AI error")
-            return f"⚠ AI error: {msg}"
-
-        return f"⚠ Unexpected response format: {result}"
+            msg = result["choices"][0].get("message", {}).get("content", "")
+            return msg.strip() if msg else "⚠ AI returned empty reply."
+        elif "error" in result:
+            return f"⚠ AI error: {result['error'].get('message', 'Unknown')}"
+        else:
+            return "⚠ Unexpected AI response format."
 
     except Exception as e:
-        print("AI Error:", e)
+        print("❌ AI Error:", e)
         return "⚠ Error connecting to AI server."
 
 
-# ---------------------------------
-# HOME ROUTE
-# ---------------------------------
+# ------------------------------
+#  FLASK ROUTES
+# ------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return "✅ WhatsApp Oil Business Bot is live!"
+    return "✅ WhatsApp AI Bot with Google Sheet integration is live!"
 
 
-# ---------------------------------
-# TWILIO WEBHOOK
-# ---------------------------------
 @app.route("/bot", methods=["POST"])
 def bot():
+    """Handle incoming WhatsApp messages."""
     incoming_msg = request.values.get("Body", "").strip()
     sender = request.values.get("From", "")
-    print(f"📩 Message from {sender}: {incoming_msg}")
+    msg_lower = incoming_msg.lower()
 
-    # If user asks for price
-    if any(word in incoming_msg.lower() for word in ["price", "cost", "rate"]):
-        product_name = incoming_msg.replace("price", "").replace("cost", "").replace("rate", "").strip()
-        ai_response = get_product_price(product_name)
-    else:
-        ai_response = get_ai_reply(incoming_msg)
+    print(f"\n📩 Message from {sender}: {incoming_msg}")
 
-    print("🤖 AI Reply:", ai_response)
+    resp = MessagingResponse()
+    reply = resp.message()
 
-    reply = MessagingResponse()
-    reply.message(ai_response)
-    return str(reply)
+    # --- ⿡ Show Menu or Prices ---
+    if "menu" in msg_lower or "price" in msg_lower:
+        data = get_product_data()
+        if not data:
+            reply.body("⚠ Could not fetch product prices at the moment. Please try again later.")
+            return str(resp)
+
+        text = "🛍 Available Products:\n"
+        for row in data:
+            name = row.get("item_name") or "Unnamed"
+            price = row.get("price") or "N/A"
+            text += f"• {name} — ₹{price}\n"
+        reply.body(text)
+        return str(resp)
+
+    # --- ⿢ Show Specific Product Price ---
+    data = get_product_data()
+    if data:
+        for row in data:
+            name = str(row.get("item_name", "")).lower()
+            if name and name in msg_lower:
+                price = row.get("price", "N/A")
+                reply.body(f"{row['item_name']} costs ₹{price}.")
+                return str(resp)
+
+    # --- ⿣ AI Fallback ---
+    ai_reply = get_ai_reply(incoming_msg)
+    print("🤖 AI Reply:", ai_reply)
+    reply.body(ai_reply)
+    return str(resp)
 
 
-# ---------------------------------
-# RUN APP (Render)
-# ---------------------------------
+# ------------------------------
+#  RUN APP
+# ------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0",port=port)
