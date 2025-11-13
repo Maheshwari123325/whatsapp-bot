@@ -16,7 +16,7 @@ SHEET_URL = os.getenv("SHEET_URL")
 
 try:
     print("🔍 Trying to connect to Google Sheet...")
-    creds = Credentials.from_service_account_file("credential.json.json", scopes=SCOPE)
+    creds = Credentials.from_service_account_file("credential.json", scopes=SCOPE)
     print("✅ Loaded credential file successfully.")
     client = gspread.authorize(creds)
     print("✅ Authorized Google client successfully.")
