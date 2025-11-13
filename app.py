@@ -5,6 +5,10 @@ import os
 import json
 import gspread
 from google.oauth2.service_account import Credentials
+import sys
+
+# Force real-time log output
+sys.stdout.reconfigure(line_buffering=True)
 
 app = Flask(__name__)
 
@@ -12,7 +16,7 @@ app = Flask(__name__)
 #  GOOGLE SHEETS CONNECTION
 # ------------------------------
 def connect_to_gsheet():
-    """Connect to Google Sheets using service account credentials from environment variable."""
+    """Connect to Google Sheets using credentials stored in environment."""
     try:
         creds_env = os.getenv("GOOGLE_CREDENTIALS")
         if not creds_env:
@@ -27,7 +31,7 @@ def connect_to_gsheet():
         client = gspread.authorize(creds)
 
         print("🔹 Opening Google Sheet...")
-        # ✅ Change sheet and tab names if needed
+        # ✅ Change sheet and tab names exactly as in your Google Sheet
         sheet = client.open("OIL BUSINESS BOT").worksheet("Products")
 
         print("✅ Google Sheet connected successfully.")
@@ -42,7 +46,6 @@ def connect_to_gsheet():
 #  FETCH PRODUCT DATA
 # ------------------------------
 def get_product_data():
-    """Retrieve product records from Google Sheet."""
     sheet = connect_to_gsheet()
     if not sheet:
         print("⚠ Could not connect to Google Sheet.")
@@ -64,7 +67,7 @@ def get_product_data():
 #  AI REPLY FUNCTION
 # ------------------------------
 def get_ai_reply(user_input):
-    """Send user input to OpenRouter AI and return reply text."""
+    """Send user input to OpenRouter AI model."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
@@ -78,8 +81,7 @@ def get_ai_reply(user_input):
                 "role": "system",
                 "content": (
                     "You are an AI ordering assistant for an oil business. "
-                    "If a user asks about prices or products, guide them politely. "
-                    "Otherwise, answer naturally."
+                    "If the user asks about prices or menu, guide them politely."
                 ),
             },
             {"role": "user", "content": user_input},
@@ -98,7 +100,6 @@ def get_ai_reply(user_input):
             return f"⚠ AI error: {result['error'].get('message', 'Unknown')}"
         else:
             return "⚠ Unexpected AI response format."
-
     except Exception as e:
         print("❌ AI Error:", e)
         return "⚠ Error connecting to AI server."
@@ -114,7 +115,6 @@ def home():
 
 @app.route("/bot", methods=["POST"])
 def bot():
-    """Handle incoming WhatsApp messages."""
     incoming_msg = request.values.get("Body", "").strip()
     sender = request.values.get("From", "")
     msg_lower = incoming_msg.lower()
@@ -124,7 +124,7 @@ def bot():
     resp = MessagingResponse()
     reply = resp.message()
 
-    # --- ⿡ Show Menu or Prices ---
+    # --- Menu or Price Request ---
     if "menu" in msg_lower or "price" in msg_lower:
         data = get_product_data()
         if not data:
@@ -139,7 +139,7 @@ def bot():
         reply.body(text)
         return str(resp)
 
-    # --- ⿢ Show Specific Product Price ---
+    # --- Specific Product Query ---
     data = get_product_data()
     if data:
         for row in data:
@@ -149,7 +149,7 @@ def bot():
                 reply.body(f"{row['item_name']} costs ₹{price}.")
                 return str(resp)
 
-    # --- ⿣ AI Fallback ---
+    # --- AI Fallback ---
     ai_reply = get_ai_reply(incoming_msg)
     print("🤖 AI Reply:", ai_reply)
     reply.body(ai_reply)
@@ -157,8 +157,24 @@ def bot():
 
 
 # ------------------------------
+#  TEST GOOGLE SHEET ENDPOINT
+# ------------------------------
+@app.route("/test_gsheet", methods=["GET"])
+def test_gsheet():
+    """Debug endpoint to verify Google Sheet connectivity."""
+    sheet = connect_to_gsheet()
+    if not sheet:
+        return "❌ Could not connect to Google Sheet"
+    try:
+        records = sheet.get_all_records()
+        return f"✅ Connected! Found {len(records)} records."
+    except Exception as e:
+        return f"❌ Error reading sheet: {str(e)}"
+
+
+# ------------------------------
 #  RUN APP
 # ------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT",5000))
-    app.run(host="0.0.0.0",port=port)
+    port = int(os.environ.get("PORT",10000))  # Render often uses 10000
+    app.run(host="0.0.0.0", port=port,debug=True)
