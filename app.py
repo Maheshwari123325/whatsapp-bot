@@ -28,7 +28,7 @@ def connect_to_gsheet():
 
         print("🔹 Opening Google Sheet...")
         # ⚠ Change to your actual Google Sheet name and worksheet/tab name
-        sheet = client.open("Your Google Sheet Name").worksheet("Products")
+        sheet = client.open("OIL BUSINESS BOT").worksheet("Products")
 
         print("✅ Google Sheet connected successfully.")
         return sheet
