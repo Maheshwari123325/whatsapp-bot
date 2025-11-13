@@ -12,7 +12,7 @@ app = Flask(__name__)
 #  GOOGLE SHEETS CONNECTION
 # ------------------------------
 def connect_to_gsheet():
-    """Connect to Google Sheets using service account credentials from Render env variable."""
+    """Connect to Google Sheets using credentials from Render environment variable."""
     try:
         creds_env = os.getenv("GOOGLE_CREDENTIALS")
         if not creds_env:
@@ -22,12 +22,12 @@ def connect_to_gsheet():
         print("🔹 Parsing GOOGLE_CREDENTIALS...")
         creds_json = json.loads(creds_env)
 
-        print("🔹 Authorizing client...")
+        print("🔹 Authorizing Google client...")
         creds = Credentials.from_service_account_info(creds_json)
         client = gspread.authorize(creds)
 
         print("🔹 Opening Google Sheet...")
-        # ⚠ Change to your actual Google Sheet name and worksheet/tab name
+        # ✅ Use your actual Google Sheet name and tab name
         sheet = client.open("OIL BUSINESS BOT").worksheet("Products")
 
         print("✅ Google Sheet connected successfully.")
@@ -42,7 +42,7 @@ def connect_to_gsheet():
 #  FETCH PRODUCT DATA
 # ------------------------------
 def get_product_data():
-    """Fetch all product rows from Google Sheet."""
+    """Fetch product data from the Google Sheet."""
     sheet = connect_to_gsheet()
     if not sheet:
         print("⚠ Could not connect to Google Sheet.")
@@ -61,7 +61,7 @@ def get_product_data():
 #  AI REPLY FUNCTION
 # ------------------------------
 def get_ai_reply(user_input):
-    """Send user input to OpenRouter AI model and return the reply text."""
+    """Send user input to OpenRouter AI and return reply text."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
@@ -75,8 +75,8 @@ def get_ai_reply(user_input):
                 "role": "system",
                 "content": (
                     "You are an AI ordering assistant. "
-                    "Help users browse products, check prices, and place polite orders. "
-                    "If product data is unavailable, respond helpfully using your knowledge."
+                    "If the user asks for menu or price, suggest them to type 'menu' or 'price'. "
+                    "Otherwise, respond politely and helpfully."
                 ),
             },
             {"role": "user", "content": user_input},
@@ -111,6 +111,7 @@ def home():
 
 @app.route("/bot", methods=["POST"])
 def bot():
+    """Main WhatsApp bot route."""
     incoming_msg = request.values.get("Body", "").strip()
     sender = request.values.get("From", "")
     msg_lower = incoming_msg.lower()
@@ -120,7 +121,7 @@ def bot():
     resp = MessagingResponse()
     reply = resp.message()
 
-    # --- ⿡ Menu or Price Request ---
+    # --- ⿡ Price or Menu Request ---
     if "menu" in msg_lower or "price" in msg_lower:
         data = get_product_data()
         if not data:
@@ -129,9 +130,9 @@ def bot():
 
         text = "🛍 Available Products:\n"
         for row in data:
-            product_name = row.get("Product") or row.get("Name") or "Unnamed"
-            product_price = row.get("Price") or "N/A"
-            text += f"• {product_name} — ₹{product_price}\n"
+            name = row.get("item_name") or "Unnamed"
+            price = row.get("price") or "N/A"
+            text += f"• {name} — ₹{price}\n"
         reply.body(text)
         return str(resp)
 
@@ -139,13 +140,13 @@ def bot():
     data = get_product_data()
     if data:
         for row in data:
-            product_name = str(row.get("Product", "")).lower()
-            if product_name and product_name in msg_lower:
-                product_price = row.get("Price", "N/A")
-                reply.body(f"{row['Product']} costs ₹{product_price}.")
+            name = str(row.get("item_name", "")).lower()
+            if name and name in msg_lower:
+                price = row.get("price", "N/A")
+                reply.body(f"{row['item_name']} costs ₹{price}.")
                 return str(resp)
 
-    # --- ⿣ AI Response (fallback) ---
+    # --- ⿣ Fallback AI Response ---
     ai_reply = get_ai_reply(incoming_msg)
     print("🤖 AI Reply:", ai_reply)
     reply.body(ai_reply)
