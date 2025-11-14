@@ -2,77 +2,99 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 import requests
 import os
-import json
 import gspread
 from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
 # ---------------------------------
-# GOOGLE SHEETS SETUP
+# GOOGLE SHEET CONFIG
 # ---------------------------------
 SCOPE = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-SHEET_URL = os.getenv("SHEET_URL")
+SHEET_URL = os.getenv("SHEET_URL")   # You MUST set this in Render
+
+SECRET_FILE_PATH = "/etc/secrets/credential.json"
+
 
 def load_google_sheet():
-    """
-    Load Google Credentials from Render secret file and return sheet object.
-    """
-    SECRET_FILE_PATH = "/etc/secrets/credential.json"
-
+    """Loads Google Sheet fresh on every request (fixes sheet=None issue)."""
     try:
-        print("🔍 Checking Google Credential file...")
-
         if not os.path.exists(SECRET_FILE_PATH):
-            print(f"❌ Secret file NOT found at: {SECRET_FILE_PATH}")
+            print("❌ Credential file missing:", SECRET_FILE_PATH)
             return None
 
-        print("📄 Credential file found. Authorizing Google client...")
-        creds = Credentials.from_service_account_file(SECRET_FILE_PATH, scopes=SCOPE)
+        creds = Credentials.from_service_account_file(
+            SECRET_FILE_PATH, scopes=SCOPE
+        )
 
         client = gspread.authorize(creds)
         sheet = client.open_by_url(SHEET_URL).worksheet("Products")
 
-        print("✅ Google Sheet connected successfully!")
         return sheet
 
     except Exception as e:
-        print("❌ Google Sheets error:", str(e))
+        print("❌ Google Sheet error:", e)
         return None
 
 
-sheet = load_google_sheet()
-
-
 # ---------------------------------
-# Fetch product price from Sheet
+# Fetch price or menu
 # ---------------------------------
-def get_product_price(product_name):
+def fetch_all_products():
+    sheet = load_google_sheet()
     if sheet is None:
-        return "⚠ Could not connect to Google Sheets. Please try later."
+        return None
 
     try:
-        records = sheet.get_all_records()
-
-        for row in records:
-            if row["Product"].lower() == product_name.lower():
-                return f"✔ The price of {product_name} is ₹{row['Price']} per litre."
-
-        return "❌ Product not found in Google Sheet."
-
+        return sheet.get_all_records()
     except Exception as e:
-        print("❌ Error reading Google Sheet:", e)
-        return "⚠ Could not fetch product prices right now."
+        print("❌ Sheet read error:", e)
+        return None
+
+
+def get_product_price(product_name):
+    records = fetch_all_products()
+    if records is None:
+        return "⚠ Could not fetch product prices now. Please try again."
+
+    for row in records:
+        if row["Product"].lower() == product_name.lower():
+            return f"✔ The price of {product_name} is ₹{row['Price']} per litre."
+
+    return "❌ Product not found in Google Sheet."
+
+
+def get_menu():
+    records = fetch_all_products()
+    if records is None:
+        return "⚠ Could not fetch product menu now."
+
+    text = "📦 Available Products:\n\n"
+    for row in records:
+        text += f"- {row['Product']} — ₹{row['Price']}\n"
+    return text
+
+
+def get_all_prices():
+    records = fetch_all_products()
+    if records is None:
+        return "⚠ Could not fetch product prices now."
+
+    text = "💰 Product Prices:\n\n"
+    for row in records:
+        text += f"- {row['Product']}: ₹{row['Price']}\n"
+    return text
 
 
 # ---------------------------------
-# AI Reply Function
+# AI Reply
 # ---------------------------------
 def get_ai_reply(user_input):
     url = "https://openrouter.ai/api/v1/chat/completions"
+
     headers = {
         "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     data = {
@@ -82,8 +104,7 @@ def get_ai_reply(user_input):
                 "role": "system",
                 "content": (
                     "You are an AI assistant for an oil business. "
-                    "Help customers check oil prices from Google Sheet "
-                    "and assist with orders politely."
+                    "Answer politely and help customers with oil purchases."
                 ),
             },
             {"role": "user", "content": user_input},
@@ -97,13 +118,10 @@ def get_ai_reply(user_input):
         if "choices" in result:
             return result["choices"][0]["message"]["content"].strip()
 
-        if "error" in result:
-            return f"⚠ AI error: {result['error'].get('message')}"
-
         return "⚠ Unexpected AI response."
 
     except Exception:
-        return "⚠ Error connecting to AI server."
+        return "⚠ AI server error. Please try again."
 
 
 # ---------------------------------
@@ -116,19 +134,22 @@ def home():
 
 @app.route("/bot", methods=["POST"])
 def bot():
-    incoming_msg = request.values.get("Body", "").strip()
+    incoming_msg = request.values.get("Body", "").strip().lower()
 
-    # Check if asking for price
-    if any(x in incoming_msg.lower() for x in ["price", "rate", "cost"]):
-        product = incoming_msg.lower()
-        product = product.replace("price", "").replace("rate", "").replace("cost", "").strip()
-        reply_text = get_product_price(product)
-    else:
-        reply_text = get_ai_reply(incoming_msg)
+    # PRICE COMMAND
+    if "price" in incoming_msg or "rate" in incoming_msg or "cost" in incoming_msg:
+        product = incoming_msg.replace("price", "").replace("rate", "").replace("cost", "").strip()
+        if product == "":
+            return str(MessagingResponse().message(get_all_prices()))
+        return str(MessagingResponse().message(get_product_price(product)))
 
-    reply = MessagingResponse()
-    reply.message(reply_text)
-    return str(reply)
+    # MENU COMMAND
+    if "menu" in incoming_msg:
+        return str(MessagingResponse().message(get_menu()))
+
+    # AI FALLBACK
+    ai_reply = get_ai_reply(incoming_msg)
+    return str(MessagingResponse().message(ai_reply))
 
 
 # ---------------------------------
